@@ -1,6 +1,7 @@
 ﻿public enum WaterTiles 
 {
-    Water,
+    ShallowWater,
+    DeepWater,
     Beach,
     Land
 }
