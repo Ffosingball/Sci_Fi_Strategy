@@ -6,6 +6,7 @@ public class AllEvents: MonoBehaviour
 {
 	public event Action<Vector2> OnCameraMove;
     public event Action<Vector2> OnCameraZoom;
+    public event Action<float> OnBackgroundResize;
 
     public void CallOnCameraMove(Vector2 value) 
     {
@@ -14,6 +15,11 @@ public class AllEvents: MonoBehaviour
 
     public void CallOnCameraZoom(Vector2 value)
     {
-        OnCameraMove?.Invoke(value);
+        OnCameraZoom?.Invoke(value);
+    }
+
+    public void CallOnBackgroundResize(float value)
+    {
+        OnBackgroundResize?.Invoke(value);
     }
 }

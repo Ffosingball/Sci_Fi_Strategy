@@ -4,9 +4,10 @@ using Unity.Jobs;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Tilemaps;
+using static UnityEngine.Rendering.STP;
 
 
-    //Job to generate a single row of the waterMap types
+//Job to generate a single row of the waterMap types
 public struct SimpleWaterMapRowGeneration : IJob
 {
     public NativeArray<WaterTiles> values;
@@ -142,6 +143,7 @@ public class WorldGenerator : MonoBehaviour
     {
         NativeList<JobHandle> jobHandles = new NativeList<JobHandle>(Allocator.TempJob);
         List<NativeArray<WaterTiles>> results = new List<NativeArray<WaterTiles>>();
+        List<NativeArray<float>> configs = new List<NativeArray<float>>();
 
         float offsetX = rng.Next(-100000, 100000);
         float offsetY = rng.Next(-100000, 100000);
@@ -152,12 +154,12 @@ public class WorldGenerator : MonoBehaviour
         for (int x = 0; x < worldConfigurations.width; x++)
         {
             NativeArray<WaterTiles> _values = new NativeArray<WaterTiles>(worldConfigurations.height, Allocator.Persistent);
-            NativeArray<float> _configVals = new NativeArray<float>(10, Allocator.Persistent);
+            NativeArray<float> _configVals = new NativeArray<float>(10, Allocator.TempJob);
             _configVals[0] = x;
             _configVals[1] = offsetX;
             _configVals[2] = offsetY;
             _configVals[3] = worldConfigurations.waterScale;
-            NativeArray<float> _levelVals = new NativeArray<float>(worldConfigurations.waterLevels, Allocator.Persistent);
+            NativeArray<float> _levelVals = new NativeArray<float>(worldConfigurations.waterLevels, Allocator.TempJob);
 
             if (worldConfigurations.advancedGeneration)
             {
@@ -178,6 +180,8 @@ public class WorldGenerator : MonoBehaviour
                 jobHandles.Add(job.Schedule());
             }
 
+            configs.Add(_configVals);
+            configs.Add(_levelVals);
             results.Add(_values);
         }
 
@@ -187,8 +191,12 @@ public class WorldGenerator : MonoBehaviour
         for (int x = 0; x < worldConfigurations.width; x++)
         {
             waterMap[x] = results[x].ToArray();
+            results[x].Dispose();
+            configs[x * 2].Dispose();
+            configs[(x * 2)+1].Dispose();
         }
 
+        jobHandles.Dispose();
         return waterMap;
     }
 
@@ -197,21 +205,25 @@ public class WorldGenerator : MonoBehaviour
     {
         NativeList<JobHandle> jobHandles = new NativeList<JobHandle>(Allocator.TempJob);
         List<NativeArray<BiomeTiles>> results = new List<NativeArray<BiomeTiles>>();
+        List<NativeArray<float>> configs = new List<NativeArray<float>>();
 
         float offsetX = rng.Next(-100000, 100000);
         float offsetY = rng.Next(-100000, 100000);
         for (int x = 0; x < worldConfigurations.width; x++)
         {
             NativeArray<BiomeTiles> _values = new NativeArray<BiomeTiles>(worldConfigurations.height, Allocator.Persistent);
-            NativeArray<float> _configVals = new NativeArray<float>(4, Allocator.Persistent);
+            NativeArray<float> _configVals = new NativeArray<float>(4, Allocator.TempJob);
             _configVals[0] = x;
             _configVals[1] = offsetX;
             _configVals[2] = offsetY;
             _configVals[3] = worldConfigurations.biomeScale;
-            NativeArray<float> _levelVals = new NativeArray<float>(worldConfigurations.biomeLevels, Allocator.Persistent);
+            NativeArray<float> _levelVals = new NativeArray<float>(worldConfigurations.biomeLevels, Allocator.TempJob);
 
             BiomesMapRowGeneration job = new BiomesMapRowGeneration { values = _values, configurationVals = _configVals, levelVals = _levelVals };
             jobHandles.Add(job.Schedule());
+
+            configs.Add(_configVals);
+            configs.Add(_levelVals);
             results.Add(_values);
         }
 
@@ -221,8 +233,12 @@ public class WorldGenerator : MonoBehaviour
         for (int x = 0; x < worldConfigurations.width; x++)
         {
             biomesMap[x] = results[x].ToArray();
+            results[x].Dispose();
+            configs[x * 2].Dispose();
+            configs[(x * 2) + 1].Dispose();
         }
 
+        jobHandles.Dispose();
         return biomesMap;
     }
 
