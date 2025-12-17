@@ -5,8 +5,9 @@ using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
-//Job to generate a single row of the waterMap types
-public struct WaterMapRowGeneration : IJob 
+
+    //Job to generate a single row of the waterMap types
+public struct SimpleWaterMapRowGeneration : IJob
 {
     public NativeArray<WaterTiles> values;
     //0 - y value, 1 - offsetX, 2 - offsetY, 3 - scale
@@ -29,6 +30,49 @@ public struct WaterMapRowGeneration : IJob
                 values[i] = WaterTiles.Beach;
             else
                 values[i] = WaterTiles.Land;
+        }
+    }
+}
+
+
+public struct AdvancedWaterMapRowGeneration : IJob
+{
+    public NativeArray<WaterTiles> values;
+    //0 - y value, 1 - offsetX, 2 - offsetY, 3 - scale
+    //4 - isleOffsetX, 5 - isleOffestY, 6 - isleScale
+    //7 - lakeOffsetX, 8 - lakeOffestY, 9 - lakeScale
+    public NativeArray<float> configurationVals;
+    public NativeArray<float> levelVals;
+
+    public void Execute()
+    {
+        for (int i = 0; i < values.Length; i++)
+        {
+            float x = (configurationVals[0] + configurationVals[2]) * configurationVals[3];
+            float y = (i + configurationVals[1]) * configurationVals[3];
+            float sample = Mathf.PerlinNoise(x, y);
+
+            x = (configurationVals[0] + configurationVals[5]) * configurationVals[6];
+            y = (i + configurationVals[4]) * configurationVals[6];
+            float sample2 = Mathf.PerlinNoise(x, y);
+
+            x = (configurationVals[0] + configurationVals[8]) * configurationVals[9];
+            y = (i + configurationVals[7]) * configurationVals[9];
+            float sample3 = Mathf.PerlinNoise(x, y);
+
+            float finalSample = sample + sample2 - sample3;
+
+            if (finalSample < levelVals[0])
+                values[i] = WaterTiles.DeepWater;
+            else if (finalSample < levelVals[1])
+                values[i] = WaterTiles.ShallowWater;
+            else if (finalSample < levelVals[2])
+                values[i] = WaterTiles.Beach;
+            else
+            {
+                values[i] = WaterTiles.Land;
+             
+            }
         }
     }
 }
@@ -78,7 +122,7 @@ public class WorldGenerator : MonoBehaviour
     {
         int seed = Random.Range(-99999999,99999999);
         Debug.Log("Seed: "+seed);
-        WorldConfigurations worldConfigurations = new WorldConfigurations(100,100,seed);
+        WorldConfigurations worldConfigurations = new WorldConfigurations(150,150,seed);
         GenerateWorld(worldConfigurations);
     }
 
@@ -101,18 +145,39 @@ public class WorldGenerator : MonoBehaviour
 
         float offsetX = rng.Next(-100000, 100000);
         float offsetY = rng.Next(-100000, 100000);
+        float isleOffsetX = rng.Next(-100000, 100000);
+        float isleOffsetY = rng.Next(-100000, 100000);
+        float lakeOffsetX = rng.Next(-100000, 100000);
+        float lakeOffsetY = rng.Next(-100000, 100000);
         for (int x = 0; x < worldConfigurations.width; x++)
         {
             NativeArray<WaterTiles> _values = new NativeArray<WaterTiles>(worldConfigurations.height, Allocator.Persistent);
-            NativeArray<float> _configVals = new NativeArray<float>(4, Allocator.Persistent);
+            NativeArray<float> _configVals = new NativeArray<float>(10, Allocator.Persistent);
             _configVals[0] = x;
             _configVals[1] = offsetX;
             _configVals[2] = offsetY;
             _configVals[3] = worldConfigurations.waterScale;
             NativeArray<float> _levelVals = new NativeArray<float>(worldConfigurations.waterLevels, Allocator.Persistent);
 
-            WaterMapRowGeneration job = new WaterMapRowGeneration { values = _values,configurationVals=_configVals,levelVals=_levelVals };
-            jobHandles.Add(job.Schedule());
+            if (worldConfigurations.advancedGeneration)
+            {
+                //Debug.Log("Advanced");
+                _configVals[4] = isleOffsetX;
+                _configVals[5] = isleOffsetY;
+                _configVals[6] = worldConfigurations.isleScale;
+                _configVals[7] = lakeOffsetX;
+                _configVals[8] = lakeOffsetY;
+                _configVals[9] = worldConfigurations.lakeScale;
+                AdvancedWaterMapRowGeneration job = new AdvancedWaterMapRowGeneration { values = _values, configurationVals = _configVals, levelVals = _levelVals };
+                jobHandles.Add(job.Schedule());
+            }
+            else
+            {
+                //Debug.Log("Simple");
+                SimpleWaterMapRowGeneration job = new SimpleWaterMapRowGeneration { values = _values, configurationVals = _configVals, levelVals = _levelVals };
+                jobHandles.Add(job.Schedule());
+            }
+
             results.Add(_values);
         }
 
