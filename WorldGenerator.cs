@@ -11,7 +11,7 @@ using static UnityEngine.Rendering.STP;
 public struct SimpleWaterMapRowGeneration : IJob
 {
     public NativeArray<WaterTiles> values;
-    //0 - y value, 1 - offsetX, 2 - offsetY, 3 - scale
+    //0 - x value, 1 - offsetY, 2 - offsetX, 3 - scale
     public NativeArray<float> configurationVals;
     public NativeArray<float> levelVals;
 
@@ -39,7 +39,7 @@ public struct SimpleWaterMapRowGeneration : IJob
 public struct AdvancedWaterMapRowGeneration : IJob
 {
     public NativeArray<WaterTiles> values;
-    //0 - y value, 1 - offsetX, 2 - offsetY, 3 - scale
+    //0 - x value, 1 - offsetY, 2 - offsetX, 3 - scale
     //4 - isleOffsetX, 5 - isleOffestY, 6 - isleScale
     //7 - lakeOffsetX, 8 - lakeOffestY, 9 - lakeScale
     public NativeArray<float> configurationVals;
@@ -82,7 +82,7 @@ public struct AdvancedWaterMapRowGeneration : IJob
 public struct BiomesMapRowGeneration : IJob
 {
     public NativeArray<BiomeTiles> values;
-    //0 - y value, 1 - offsetX, 2 - offsetY, 3 - scale
+    //0 - x value, 1 - offsetY, 2 - offsetX, 3 - scale
     public NativeArray<float> configurationVals;
     public NativeArray<float> levelVals;
 
@@ -107,7 +107,9 @@ public struct BiomesMapRowGeneration : IJob
 
 public class WorldGenerator : MonoBehaviour
 {
-    public Tilemap tilemap;
+    //public Tilemap tilemap;
+    public GameObject chunkPrefab;
+    public GameObject grid;
 
     public Tile[] deepWaterTiles;
     public Tile[] shallowWaterTiles;
@@ -117,47 +119,82 @@ public class WorldGenerator : MonoBehaviour
     public Tile[] forestTiles;
     public Tile placeholder;
 
+    private WorldConfigurations worldConfigurations;
+    private System.Random rng;
+    float waterOffsetX;
+    float waterOffsetY;
+    float isleOffsetX;
+    float isleOffsetY;
+    float lakeOffsetX;
+    float lakeOffsetY;
+    float biomeOffsetX;
+    float biomeOffsetY;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         int seed = Random.Range(-99999999,99999999);
         Debug.Log("Seed: "+seed);
-        WorldConfigurations worldConfigurations = new WorldConfigurations(150,150,seed);
-        GenerateWorld(worldConfigurations);
+        worldConfigurations = new WorldConfigurations(seed);
+        rng = new System.Random(worldConfigurations.seed);
+
+        waterOffsetX = rng.Next(-100000, 100000);
+        waterOffsetY = rng.Next(-100000, 100000);
+        isleOffsetX = rng.Next(-100000, 100000);
+        isleOffsetY = rng.Next(-100000, 100000);
+        lakeOffsetX = rng.Next(-100000, 100000);
+        lakeOffsetY = rng.Next(-100000, 100000);
+        biomeOffsetX = rng.Next(-100000, 100000);
+        biomeOffsetY = rng.Next(-100000, 100000);
+        //GenerateWorld();
     }
 
     //Generate world by given configurations
-    void GenerateWorld(WorldConfigurations worldConfigurations)
+    /*void GenerateWorld()
     {
-        System.Random rng = new System.Random(worldConfigurations.seed);
+        WaterTiles[][] waterMap = GenerateWaterMap();
+        BiomeTiles[][] biomeMap = GenerateBiomeMap();
 
-        WaterTiles[][] waterMap = GenerateWaterMap(worldConfigurations, rng);
-        BiomeTiles[][] biomeMap = GenerateBiomeMap(worldConfigurations, rng);
+        DrawTiles(waterMap, biomeMap);
+    }*/
 
-        DrawTiles(waterMap, biomeMap, worldConfigurations, rng);
+
+    public GameObject GenerateChunk(Vector2 position, Vector2Int chunkSizes)
+    {
+        Debug.Log("Generate chunk!");
+        GameObject newChunk = Instantiate(chunkPrefab,new Vector3(position.x,position.y-(chunkSizes.y/4),0f),Quaternion.identity);
+        newChunk.transform.SetParent(grid.transform);
+        //newChunk.name = "C" + position.x + ";" + position.y;
+
+        Vector2 isometricPosition = new Vector2(position.x+(2*position.y),(position.y*2)-position.x);
+
+        WaterTiles[][] waterMap = GenerateWaterMap(isometricPosition, chunkSizes);
+        BiomeTiles[][] biomeMap = GenerateBiomeMap(isometricPosition, chunkSizes);
+
+        DrawTiles(waterMap, biomeMap, newChunk, chunkSizes);
+
+        return newChunk;
     }
 
 
-    WaterTiles[][] GenerateWaterMap(WorldConfigurations worldConfigurations, System.Random rng)
+    WaterTiles[][] GenerateWaterMap(Vector2 position, Vector2Int chunkSizes)
     {
+        Debug.Log("World Pos: "+position.x+";"+position.y);
+        Debug.Log("Offsets: " + waterOffsetX + ";" + waterOffsetY);
         NativeList<JobHandle> jobHandles = new NativeList<JobHandle>(Allocator.TempJob);
         List<NativeArray<WaterTiles>> results = new List<NativeArray<WaterTiles>>();
         List<NativeArray<float>> configs = new List<NativeArray<float>>();
 
-        float offsetX = rng.Next(-100000, 100000);
-        float offsetY = rng.Next(-100000, 100000);
-        float isleOffsetX = rng.Next(-100000, 100000);
-        float isleOffsetY = rng.Next(-100000, 100000);
-        float lakeOffsetX = rng.Next(-100000, 100000);
-        float lakeOffsetY = rng.Next(-100000, 100000);
-        for (int x = 0; x < worldConfigurations.width; x++)
+        Debug.Log("X: "+(position.x + waterOffsetX) * worldConfigurations.waterScale);
+        Debug.Log("Y: "+(waterOffsetY + position.y) * worldConfigurations.waterScale);
+
+        for (int x = 0; x < chunkSizes.x; x++)
         {
-            NativeArray<WaterTiles> _values = new NativeArray<WaterTiles>(worldConfigurations.height, Allocator.Persistent);
+            NativeArray<WaterTiles> _values = new NativeArray<WaterTiles>(chunkSizes.y, Allocator.Persistent);
             NativeArray<float> _configVals = new NativeArray<float>(10, Allocator.TempJob);
-            _configVals[0] = x;
-            _configVals[1] = offsetX;
-            _configVals[2] = offsetY;
+            _configVals[0] = x+position.x;
+            _configVals[1] = waterOffsetY+position.y;
+            _configVals[2] = waterOffsetX;
             _configVals[3] = worldConfigurations.waterScale;
             NativeArray<float> _levelVals = new NativeArray<float>(worldConfigurations.waterLevels, Allocator.TempJob);
 
@@ -187,8 +224,8 @@ public class WorldGenerator : MonoBehaviour
 
         JobHandle.CompleteAll(jobHandles);
 
-        WaterTiles[][] waterMap = new WaterTiles[worldConfigurations.width][];
-        for (int x = 0; x < worldConfigurations.width; x++)
+        WaterTiles[][] waterMap = new WaterTiles[chunkSizes.x][];
+        for (int x = 0; x < chunkSizes.x; x++)
         {
             waterMap[x] = results[x].ToArray();
             results[x].Dispose();
@@ -201,21 +238,19 @@ public class WorldGenerator : MonoBehaviour
     }
 
 
-    BiomeTiles[][] GenerateBiomeMap(WorldConfigurations worldConfigurations, System.Random rng)
+    BiomeTiles[][] GenerateBiomeMap(Vector2 position, Vector2Int chunkSizes)
     {
         NativeList<JobHandle> jobHandles = new NativeList<JobHandle>(Allocator.TempJob);
         List<NativeArray<BiomeTiles>> results = new List<NativeArray<BiomeTiles>>();
         List<NativeArray<float>> configs = new List<NativeArray<float>>();
 
-        float offsetX = rng.Next(-100000, 100000);
-        float offsetY = rng.Next(-100000, 100000);
-        for (int x = 0; x < worldConfigurations.width; x++)
+        for (int x = 0; x < chunkSizes.x; x++)
         {
-            NativeArray<BiomeTiles> _values = new NativeArray<BiomeTiles>(worldConfigurations.height, Allocator.Persistent);
+            NativeArray<BiomeTiles> _values = new NativeArray<BiomeTiles>(chunkSizes.y, Allocator.Persistent);
             NativeArray<float> _configVals = new NativeArray<float>(4, Allocator.TempJob);
-            _configVals[0] = x;
-            _configVals[1] = offsetX;
-            _configVals[2] = offsetY;
+            _configVals[0] = x+position.x;
+            _configVals[1] = biomeOffsetY+position.y;
+            _configVals[2] = biomeOffsetX;
             _configVals[3] = worldConfigurations.biomeScale;
             NativeArray<float> _levelVals = new NativeArray<float>(worldConfigurations.biomeLevels, Allocator.TempJob);
 
@@ -229,8 +264,8 @@ public class WorldGenerator : MonoBehaviour
 
         JobHandle.CompleteAll(jobHandles);
 
-        BiomeTiles[][] biomesMap = new BiomeTiles[worldConfigurations.width][];
-        for (int x = 0; x < worldConfigurations.width; x++)
+        BiomeTiles[][] biomesMap = new BiomeTiles[chunkSizes.x][];
+        for (int x = 0; x < chunkSizes.x; x++)
         {
             biomesMap[x] = results[x].ToArray();
             results[x].Dispose();
@@ -243,42 +278,49 @@ public class WorldGenerator : MonoBehaviour
     }
 
 
-    void DrawTiles(WaterTiles[][] waterMap, BiomeTiles[][] biomeMap, WorldConfigurations worldConfigurations, System.Random rng)
+    void DrawTiles(WaterTiles[][] waterMap, BiomeTiles[][] biomeMap, GameObject newChunk, Vector2Int chunkSizes)
     {
-        for (int x = 0; x < worldConfigurations.width; x++)
+        Tilemap tilemap = newChunk.GetComponent<Tilemap>();
+
+        for (int x = 0; x < chunkSizes.x; x++)
         {
-            for (int y = 0; y < worldConfigurations.height; y++)
+            for (int y = 0; y < chunkSizes.y; y++)
             {
                 Tile tile = new Tile();
 
-                switch (waterMap[x][y]) 
+                if (x == 0 && y == 0)
+                    tile = placeholder;
+                else
                 {
-                    case WaterTiles.DeepWater:
-                        tile = deepWaterTiles[rng.Next(0, deepWaterTiles.Length)];
-                        break;
-                    case WaterTiles.ShallowWater:
-                        tile = shallowWaterTiles[rng.Next(0, shallowWaterTiles.Length)];
-                        break;
-                    case WaterTiles.Beach:
-                        tile = beachTiles[rng.Next(0, beachTiles.Length)];
-                        break;
-                    case WaterTiles.Land:
-                        switch (biomeMap[x][y]) 
-                        {
-                            case BiomeTiles.Rock:
-                                tile = rockTiles[rng.Next(0, beachTiles.Length)];
-                                break;
-                            case BiomeTiles.Steppe:
-                                tile = steppeTiles[rng.Next(0, beachTiles.Length)];
-                                break;
-                            case BiomeTiles.Forest:
-                                tile = forestTiles[rng.Next(0, beachTiles.Length)];
-                                break;
-                        }
-                        break;
-                    default:
-                        tile = placeholder;
-                        break;
+                    switch (waterMap[x][y])
+                    {
+                        case WaterTiles.DeepWater:
+                            tile = deepWaterTiles[rng.Next(0, deepWaterTiles.Length)];
+                            break;
+                        case WaterTiles.ShallowWater:
+                            tile = shallowWaterTiles[rng.Next(0, shallowWaterTiles.Length)];
+                            break;
+                        case WaterTiles.Beach:
+                            tile = beachTiles[rng.Next(0, beachTiles.Length)];
+                            break;
+                        case WaterTiles.Land:
+                            switch (biomeMap[x][y])
+                            {
+                                case BiomeTiles.Rock:
+                                    tile = rockTiles[rng.Next(0, beachTiles.Length)];
+                                    break;
+                                case BiomeTiles.Steppe:
+                                    tile = steppeTiles[rng.Next(0, beachTiles.Length)];
+                                    break;
+                                case BiomeTiles.Forest:
+                                    tile = forestTiles[rng.Next(0, beachTiles.Length)];
+                                    break;
+                            }
+                            break;
+                        default:
+                            tile = placeholder;
+                            break;
+                    }
                 }
 
                 tilemap.SetTile(new Vector3Int(x, y, 0), tile);
