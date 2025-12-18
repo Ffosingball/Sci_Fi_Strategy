@@ -1,10 +1,13 @@
+using System.Collections;
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.Tilemaps;
 using static UnityEngine.Rendering.STP;
+using static UnityEngine.Rendering.VirtualTexturing.Debugging;
 
 
 //Job to generate a single row of the waterMap types
@@ -117,29 +120,47 @@ public class WorldGenerator : MonoBehaviour
     public Tile[] forestTiles;
     public Tile placeholder;
 
+    private WaterTiles[][] waterMap;
+    private BiomeTiles[][] biomeMap;
+
+    private bool finishedWaterMap = false;
+    private bool finishedBiomeMap = false;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         int seed = Random.Range(-99999999,99999999);
         Debug.Log("Seed: "+seed);
-        WorldConfigurations worldConfigurations = new WorldConfigurations(150,150,seed);
-        GenerateWorld(worldConfigurations);
+        WorldConfigurations worldConfigurations = new WorldConfigurations(1000,1000,seed);
+
+        waterMap = new WaterTiles[worldConfigurations.width][];
+        biomeMap = new BiomeTiles[worldConfigurations.width][];
+
+        StartCoroutine(GenerateWorld(worldConfigurations));
     }
 
     //Generate world by given configurations
-    void GenerateWorld(WorldConfigurations worldConfigurations)
+    private IEnumerator GenerateWorld(WorldConfigurations worldConfigurations)
     {
         System.Random rng = new System.Random(worldConfigurations.seed);
 
-        WaterTiles[][] waterMap = GenerateWaterMap(worldConfigurations, rng);
-        BiomeTiles[][] biomeMap = GenerateBiomeMap(worldConfigurations, rng);
+        StartCoroutine(GenerateWaterMap(worldConfigurations, rng));
+        while (!finishedWaterMap)
+        {
+            yield return null;
+        }
 
-        DrawTiles(waterMap, biomeMap, worldConfigurations, rng);
+        StartCoroutine(GenerateBiomeMap(worldConfigurations, rng));
+        while (!finishedBiomeMap)
+        {
+            yield return null;
+        }
+
+        StartCoroutine(DrawTiles(worldConfigurations, rng));
     }
 
 
-    WaterTiles[][] GenerateWaterMap(WorldConfigurations worldConfigurations, System.Random rng)
+    private IEnumerator GenerateWaterMap(WorldConfigurations worldConfigurations, System.Random rng)
     {
         NativeList<JobHandle> jobHandles = new NativeList<JobHandle>(Allocator.TempJob);
         List<NativeArray<WaterTiles>> results = new List<NativeArray<WaterTiles>>();
@@ -185,23 +206,39 @@ public class WorldGenerator : MonoBehaviour
             results.Add(_values);
         }
 
-        JobHandle.CompleteAll(jobHandles);
+        //JobHandle.CompleteAll(jobHandles);
 
-        WaterTiles[][] waterMap = new WaterTiles[worldConfigurations.width][];
         for (int x = 0; x < worldConfigurations.width; x++)
         {
-            waterMap[x] = results[x].ToArray();
-            results[x].Dispose();
-            configs[x * 2].Dispose();
-            configs[(x * 2)+1].Dispose();
+            if (jobHandles[x].IsCompleted)
+            {
+                jobHandles[x].Complete();
+                waterMap[x] = results[x].ToArray();
+                results[x].Dispose();
+                configs[x * 2].Dispose();
+                configs[(x * 2) + 1].Dispose();
+            }
+            else
+            {
+                while (!jobHandles[x].IsCompleted)
+                {
+                    yield return null;
+                }
+
+                jobHandles[x].Complete();
+                waterMap[x] = results[x].ToArray();
+                results[x].Dispose();
+                configs[x * 2].Dispose();
+                configs[(x * 2) + 1].Dispose();
+            }
         }
 
         jobHandles.Dispose();
-        return waterMap;
+        finishedWaterMap = true;
     }
 
 
-    BiomeTiles[][] GenerateBiomeMap(WorldConfigurations worldConfigurations, System.Random rng)
+    private IEnumerator GenerateBiomeMap(WorldConfigurations worldConfigurations, System.Random rng)
     {
         NativeList<JobHandle> jobHandles = new NativeList<JobHandle>(Allocator.TempJob);
         List<NativeArray<BiomeTiles>> results = new List<NativeArray<BiomeTiles>>();
@@ -227,62 +264,85 @@ public class WorldGenerator : MonoBehaviour
             results.Add(_values);
         }
 
-        JobHandle.CompleteAll(jobHandles);
+        //JobHandle.CompleteAll(jobHandles);
 
-        BiomeTiles[][] biomesMap = new BiomeTiles[worldConfigurations.width][];
         for (int x = 0; x < worldConfigurations.width; x++)
         {
-            biomesMap[x] = results[x].ToArray();
-            results[x].Dispose();
-            configs[x * 2].Dispose();
-            configs[(x * 2) + 1].Dispose();
+            if (jobHandles[x].IsCompleted)
+            {
+                jobHandles[x].Complete();
+                biomeMap[x] = results[x].ToArray();
+                results[x].Dispose();
+                configs[x * 2].Dispose();
+                configs[(x * 2) + 1].Dispose();
+            }
+            else 
+            {
+                while (!jobHandles[x].IsCompleted) 
+                {
+                    yield return null;
+                }
+
+                jobHandles[x].Complete();
+                biomeMap[x] = results[x].ToArray();
+                results[x].Dispose();
+                configs[x * 2].Dispose();
+                configs[(x * 2) + 1].Dispose();
+            }
         }
 
         jobHandles.Dispose();
-        return biomesMap;
+        finishedBiomeMap = true;
     }
 
 
-    void DrawTiles(WaterTiles[][] waterMap, BiomeTiles[][] biomeMap, WorldConfigurations worldConfigurations, System.Random rng)
+    private IEnumerator DrawTiles(WorldConfigurations worldConfigurations, System.Random rng)
     {
         for (int x = 0; x < worldConfigurations.width; x++)
         {
+            Vector3Int[] positions = new Vector3Int[worldConfigurations.height];
+            TileBase[] tiles = new TileBase[worldConfigurations.height];
+
             for (int y = 0; y < worldConfigurations.height; y++)
             {
-                Tile tile = new Tile();
+                //Tile tile = new Tile();
 
                 switch (waterMap[x][y]) 
                 {
                     case WaterTiles.DeepWater:
-                        tile = deepWaterTiles[rng.Next(0, deepWaterTiles.Length)];
+                        tiles[y] = deepWaterTiles[rng.Next(0, deepWaterTiles.Length)];
                         break;
                     case WaterTiles.ShallowWater:
-                        tile = shallowWaterTiles[rng.Next(0, shallowWaterTiles.Length)];
+                        tiles[y] = shallowWaterTiles[rng.Next(0, shallowWaterTiles.Length)];
                         break;
                     case WaterTiles.Beach:
-                        tile = beachTiles[rng.Next(0, beachTiles.Length)];
+                        tiles[y] = beachTiles[rng.Next(0, beachTiles.Length)];
                         break;
                     case WaterTiles.Land:
                         switch (biomeMap[x][y]) 
                         {
                             case BiomeTiles.Rock:
-                                tile = rockTiles[rng.Next(0, beachTiles.Length)];
+                                tiles[y] = rockTiles[rng.Next(0, beachTiles.Length)];
                                 break;
                             case BiomeTiles.Steppe:
-                                tile = steppeTiles[rng.Next(0, beachTiles.Length)];
+                                tiles[y] = steppeTiles[rng.Next(0, beachTiles.Length)];
                                 break;
                             case BiomeTiles.Forest:
-                                tile = forestTiles[rng.Next(0, beachTiles.Length)];
+                                tiles[y] = forestTiles[rng.Next(0, beachTiles.Length)];
                                 break;
                         }
                         break;
                     default:
-                        tile = placeholder;
+                        tiles[y] = placeholder;
                         break;
                 }
 
-                tilemap.SetTile(new Vector3Int(x, y, 0), tile);
+                positions[y] = new Vector3Int(x, y, 0);
+                //tilemap.SetTile(new Vector3Int(x, y, 0), tile);
             }
+
+            tilemap.SetTiles(positions,tiles);
+            yield return null;
         }
     }
 }
