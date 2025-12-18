@@ -2,12 +2,8 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Jobs;
-using Unity.VisualScripting;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using UnityEngine.Tilemaps;
-using static UnityEngine.Rendering.STP;
-using static UnityEngine.Rendering.VirtualTexturing.Debugging;
 
 
 //Job to generate a single row of the waterMap types
