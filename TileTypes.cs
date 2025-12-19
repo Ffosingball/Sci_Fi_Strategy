@@ -12,3 +12,15 @@ public enum BiomeTiles
     Steppe,
     Forest
 }
+
+public enum OreTiles
+{
+    Iron,
+    Bauxite,
+    Oil,
+    Coal,
+    REE,
+    Copper,
+    Uranium,
+    None
+}
